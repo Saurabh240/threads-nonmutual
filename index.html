@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Threads Non‑Mutuals Checker</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1020; /* deep navy */
+      --card: #121833;
+      --ink: #eaf0ff;
+      --muted: #a8b3d6;
+      --accent: #6ea8ff;
+      --accent-2: #66f0a9;
+      --warn: #ffce6e;
+    }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 800px at 70% -10%, #1a2250 0, rgba(26,34,80,0) 60%), var(--bg);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    }
+    .wrap { max-width: 980px; margin: 32px auto 80px; padding: 0 16px; }
+    header { display:flex; align-items:center; gap:12px; margin-bottom: 20px; }
+    header .logo { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); display:grid; place-items:center; font-weight:800; color:#0c1225; }
+    h1 { font-size: 22px; margin: 0; letter-spacing: .2px; }
+
+    .card { background: var(--card); border-radius: 16px; padding: 18px; border: 1px solid rgba(255,255,255,.06); box-shadow: 0 10px 24px rgba(0,0,0,.25); }
+    .grid { display:grid; grid-template-columns: 1fr; gap: 16px; }
+    @media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+
+    .uploader { border: 1px dashed rgba(255,255,255,.2); border-radius: 14px; padding: 14px; }
+    .uploader h3 { margin:0 0 8px; font-size: 15px; font-weight:600; }
+    .uploader label { display:block; margin-top:8px; font-size: 13px; color: var(--muted); }
+    input[type="file"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.15); color: var(--ink); }
+    select, button, input[type="text"] { padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.15); color: var(--ink); }
+
+    .actions { display:flex; gap: 10px; align-items:center; flex-wrap: wrap; }
+    button.primary { background: linear-gradient(135deg, var(--accent), #7ec0ff); color:#081226; border: none; font-weight: 700; }
+    button.secondary { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); color: var(--ink); }
+
+    .help { color: var(--muted); font-size: 13px; }
+    .stats { display:flex; gap: 14px; flex-wrap:wrap; margin-top: 14px; }
+    .pill { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 6px 10px; font-size: 12px; }
+
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; font-size: 14px; }
+    th { color: var(--muted); font-weight: 600; }
+    .muted { color: var(--muted); }
+    .warning { color: var(--warn); }
+    .footer { margin-top: 26px; color: var(--muted); font-size: 12px; }
+    .hidden { display:none; }
+    .tag { font-size: 12px; color: var(--muted); }
+    a { color: var(--accent-2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">T</div>
+      <div>
+        <h1>Threads Non‑Mutuals Checker</h1>
+        <div class="help">Upload your <b>Followers</b> CSV and <b>Following</b> CSV → get a list of people you follow who don’t follow you back. Everything runs in your browser (no data leaves your device).</div>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="card uploader">
+        <h3>1) Followers CSV (people who follow <i>you</i>)</h3>
+        <input id="followersFile" type="file" accept=".csv" />
+        <label class="help">We’ll auto‑detect the username column (common names: <code>username</code>, <code>handle</code>). If it’s different, pick it below.</label>
+        <div class="actions" style="margin-top:10px">
+          <span class="tag">Username column:</span>
+          <select id="followersColumn"></select>
+        </div>
+        <div id="followersStatus" class="help"></div>
+      </div>
+
+      <div class="card uploader">
+        <h3>2) Following CSV (people <i>you</i> follow)</h3>
+        <input id="followingFile" type="file" accept=".csv" />
+        <label class="help">Same here — we’ll guess the column; you can override.</label>
+        <div class="actions" style="margin-top:10px">
+          <span class="tag">Username column:</span>
+          <select id="followingColumn"></select>
+        </div>
+        <div id="followingStatus" class="help"></div>
+      </div>
+    </section>
+
+    <div class="card" style="margin-top:16px">
+      <div class="actions">
+        <button id="compareBtn" class="primary">Compare</button>
+        <button id="downloadBtn" class="secondary" disabled>Download CSV</button>
+        <input id="filterInput" type="text" placeholder="Filter results… (@handle or name)" class="secondary" style="flex:1; min-width:220px" />
+      </div>
+      <div class="stats" id="stats"></div>
+      <div id="warning" class="warning hidden" style="margin-top:10px"></div>
+      <div id="results"></div>
+      <div class="footer">Tip: click a username to open their Threads profile in a new tab.</div>
+    </div>
+  </div>
+
+  <script>
+    const userColCandidates = ["username","handle","user","user_name","screen_name"]; // common header names
+
+    const $ = (sel) => document.querySelector(sel);
+    const followersFile = $('#followersFile');
+    const followingFile = $('#followingFile');
+    const followersColumn = $('#followersColumn');
+    const followingColumn = $('#followingColumn');
+    const followersStatus = $('#followersStatus');
+    const followingStatus = $('#followingStatus');
+    const compareBtn = $('#compareBtn');
+    const downloadBtn = $('#downloadBtn');
+    const stats = $('#stats');
+    const warning = $('#warning');
+    const results = $('#results');
+    const filterInput = $('#filterInput');
+
+    let followersData = []; // array of objects
+    let followingData = [];
+    let diffList = []; // computed non-mutuals
+
+    function detectUsernameColumn(headers) {
+      if (!headers || headers.length === 0) return null;
+      // exact match first
+      for (const c of userColCandidates) if (headers.includes(c)) return c;
+      // case-insensitive fallback
+      const lower = headers.map(h => h.toLowerCase());
+      for (const c of userColCandidates) {
+        const idx = lower.indexOf(c);
+        if (idx >= 0) return headers[idx];
+      }
+      // last resort: look for something that contains "user" or "handle"
+      const guess = headers.find(h => /user(name)?|handle/i.test(h));
+      return guess || headers[0];
+    }
+
+    function populateColumnSelector(selectEl, headers, detected) {
+      selectEl.innerHTML = '';
+      headers.forEach(h => {
+        const opt = document.createElement('option');
+        opt.value = h; opt.textContent = h;
+        if (h === detected) opt.selected = true;
+        selectEl.appendChild(opt);
+      });
+      if (!headers.length) {
+        const opt = document.createElement('option');
+        opt.textContent = '—';
+        selectEl.appendChild(opt);
+      }
+    }
+
+    function normalizeHandle(v) {
+      return String(v ?? '')
+        .trim()
+        .replace(/^@/, '')
+        .toLowerCase();
+    }
+
+    function parseCsv(file, onDone, statusEl, columnSelect) {
+      statusEl.textContent = 'Parsing…';
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        complete: (res) => {
+          const rows = res.data || [];
+          const headers = res.meta && res.meta.fields ? res.meta.fields : (rows[0] ? Object.keys(rows[0]) : []);
+          const detected = detectUsernameColumn(headers);
+          populateColumnSelector(columnSelect, headers, detected);
+          statusEl.textContent = `${rows.length.toLocaleString()} rows • detected username column: "${detected}"`;
+          onDone(rows);
+        },
+        error: (err) => {
+          statusEl.textContent = 'Error parsing CSV: ' + err;
+        }
+      });
+    }
+
+    followersFile.addEventListener('change', (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      parseCsv(f, (rows) => { followersData = rows; }, followersStatus, followersColumn);
+    });
+    followingFile.addEventListener('change', (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      parseCsv(f, (rows) => { followingData = rows; }, followingStatus, followingColumn);
+    });
+
+    function extractUserSet(rows, colName) {
+      const set = new Set();
+      for (const r of rows) {
+        const h = normalizeHandle(r[colName]);
+        if (h) set.add(h);
+      }
+      return set;
+    }
+
+    function renderTable(list) {
+      const q = filterInput.value.trim().toLowerCase();
+      const filtered = q ? list.filter(u => u.includes(q)) : list;
+      const rowsHtml = filtered.map(u => `
+        <tr>
+          <td><a href="https://www.threads.net/@${u}" target="_blank" rel="noopener noreferrer">@${u}</a></td>
+        </tr>
+      `).join('');
+      results.innerHTML = `
+        <table>
+          <thead><tr><th>Username</th></tr></thead>
+          <tbody>${rowsHtml || '<tr><td class="muted">No matches.</td></tr>'}</tbody>
+        </table>
+      `;
+    }
+
+    filterInput.addEventListener('input', () => renderTable(diffList));
+
+    compareBtn.addEventListener('click', () => {
+      warning.classList.add('hidden');
+      if (!followersData.length || !followingData.length) {
+        warning.textContent = 'Please upload both CSV files first (Followers and Following).';
+        warning.classList.remove('hidden');
+        return;
+      }
+
+      const followersCol = followersColumn.value;
+      const followingCol = followingColumn.value;
+      if (!followersCol || !followingCol) {
+        warning.textContent = 'Could not determine username column. Please select the correct column in both dropdowns.';
+        warning.classList.remove('hidden');
+        return;
+      }
+
+      const followersSet = extractUserSet(followersData, followersCol);
+      const followingSet = extractUserSet(followingData, followingCol);
+
+      const nonMutuals = [...followingSet].filter(u => !followersSet.has(u)).sort((a,b)=>a.localeCompare(b));
+      diffList = nonMutuals;
+
+      stats.innerHTML = `
+        <span class="pill">Followers: <b>${followersSet.size.toLocaleString()}</b></span>
+        <span class="pill">Following: <b>${followingSet.size.toLocaleString()}</b></span>
+        <span class="pill">Not following back: <b>${nonMutuals.length.toLocaleString()}</b></span>
+      `;
+
+      renderTable(nonMutuals);
+      downloadBtn.disabled = nonMutuals.length === 0;
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      if (!diffList.length) return;
+      const header = 'username\n';
+      const csv = header + diffList.map(u => `${u}`).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'not_following_back.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+    });
+  </script>
+</body>
+</html>
